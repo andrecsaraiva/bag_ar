@@ -175,7 +175,9 @@
 
         <div class="cta-wrap">
           <a class="ar-button" id="open-scene-viewer-btn" href="#">Open Camera AR on Android</a>
-          <div class="small-note">If nothing happens, make sure you are on Android with AR support and open this page in Chrome.</div>
+          <a class="ar-button" id="open-scene-viewer-alt" href="#"
+             style="background:#e8e4d4;">Open Camera AR — alternative</a>
+          <div class="small-note">If the first button does nothing, try the alternative. Use Android + Chrome with AR support.</div>
         </div>
 
         <model-viewer
@@ -207,19 +209,30 @@
 
   <script>
     const button = document.getElementById('open-scene-viewer-btn');
+    const buttonAlt = document.getElementById('open-scene-viewer-alt');
 
+    const modelUrl = new URL('./assets/models/bag.glb', window.location.href).href;
+
+    // Caminho 1: intent:// — o metodo original do app.
     function buildSceneViewerIntent() {
-      const modelUrl = new URL('./assets/models/bag.glb', window.location.href).href;
       const fallbackUrl = encodeURIComponent(window.location.href);
-
       return 'intent://arvr.google.com/scene-viewer/1.0?file='
         + encodeURIComponent(modelUrl)
-        + '&mode=ar_only&resizable=true#Intent;scheme=https;package=com.google.ar.core;action=android.intent.action.VIEW;S.browser_fallback_url='
+        + '&mode=ar_preferred&resizable=true#Intent;scheme=https;package=com.google.ar.core;action=android.intent.action.VIEW;S.browser_fallback_url='
         + fallbackUrl
         + ';end;';
     }
 
+    // Caminho 2: URL https:// direta do Scene Viewer.
+    // As vezes funciona quando o intent:// falha (e vice-versa).
+    function buildSceneViewerHttps() {
+      return 'https://arvr.google.com/scene-viewer/1.0?file='
+        + encodeURIComponent(modelUrl)
+        + '&mode=ar_preferred';
+    }
+
     button.setAttribute('href', buildSceneViewerIntent());
+    buttonAlt.setAttribute('href', buildSceneViewerHttps());
   </script>
 </body>
 </html>
