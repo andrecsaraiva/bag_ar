@@ -180,6 +180,15 @@
           <div class="small-note">If the first button does nothing, try the alternative. Use Android + Chrome with AR support.</div>
         </div>
 
+        <!-- ===== painel de debug ===== -->
+        <div id="debugPanel" style="margin:0 18px 18px;background:#15150f;border:1px solid #3a3a30;border-radius:12px;overflow:hidden;">
+          <div style="display:flex;border-bottom:1px solid #3a3a30;">
+            <button id="copyLogBtn" style="flex:1;padding:10px;border:0;background:#222;color:#e6e6c8;font-size:12px;font-weight:700;">Copy log</button>
+            <button id="clearLogBtn" style="flex:1;padding:10px;border:0;border-left:1px solid #3a3a30;background:#222;color:#e6e6c8;font-size:12px;font-weight:700;">Clear</button>
+          </div>
+          <div id="debugLog" style="max-height:180px;overflow-y:auto;padding:8px 10px;font-family:Consolas,monospace;font-size:11px;line-height:1.5;color:#bde8a0;white-space:pre-wrap;word-break:break-word;"></div>
+        </div>
+
         <model-viewer
           id="preview-viewer"
           src="./assets/models/bag.glb"
@@ -208,31 +217,112 @@
   </div>
 
   <script>
-    const button = document.getElementById('open-scene-viewer-btn');
-    const buttonAlt = document.getElementById('open-scene-viewer-alt');
+    // ===== motor de debug =====
+    var logEl = document.getElementById('debugLog');
+    var t0 = Date.now();
+    var lines = [];
+    function log(msg){
+      var t = ((Date.now() - t0)/1000).toFixed(2);
+      lines.push('[' + t + 's] ' + msg);
+      if (logEl){ logEl.textContent = lines.join('\n'); logEl.scrollTop = logEl.scrollHeight; }
+    }
+    document.getElementById('clearLogBtn').onclick = function(){
+      lines = []; logEl.textContent = '';
+    };
+    document.getElementById('copyLogBtn').onclick = function(){
+      var txt = lines.join('\n');
+      if (navigator.clipboard){
+        navigator.clipboard.writeText(txt).then(
+          function(){ log('log copiado — cole no chat'); },
+          function(){ fallbackCopy(txt); }
+        );
+      } else { fallbackCopy(txt); }
+    };
+    function fallbackCopy(txt){
+      var ta = document.createElement('textarea');
+      ta.value = txt; document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); log('log copiado'); }
+      catch(e){ log('copie manualmente acima'); }
+      document.body.removeChild(ta);
+    }
 
-    const modelUrl = new URL('./assets/models/bag.glb', window.location.href).href;
+    // ===== info do ambiente =====
+    log('=== AR debug (bolsa) ===');
+    log('UA: ' + navigator.userAgent);
+    log('URL da pagina: ' + window.location.href);
 
-    // Caminho 1: intent:// — o metodo original do app.
-    function buildSceneViewerIntent() {
-      const fallbackUrl = encodeURIComponent(window.location.href);
+    var button = document.getElementById('open-scene-viewer-btn');
+    var buttonAlt = document.getElementById('open-scene-viewer-alt');
+    var modelUrl = new URL('./assets/models/bag.glb', window.location.href).href;
+    log('URL do modelo: ' + modelUrl);
+
+    // ===== checa se o GLB existe e o tamanho dele =====
+    // (HEAD request — descobre se o arquivo carrega e quantos MB tem)
+    fetch(modelUrl, { method: 'HEAD' }).then(function(r){
+      log('GLB HEAD status: ' + r.status + ' (' + (r.ok ? 'OK' : 'FALHA') + ')');
+      var len = r.headers.get('content-length');
+      var ct = r.headers.get('content-type');
+      if (len) log('GLB tamanho: ' + (len/1048576).toFixed(2) + ' MB');
+      log('GLB content-type: ' + (ct || '(nao informado)'));
+      if (ct && ct.indexOf('model/gltf-binary') === -1){
+        log('AVISO: content-type nao e model/gltf-binary — Scene Viewer pode recusar');
+      }
+    }).catch(function(e){
+      log('ERRO ao checar o GLB: ' + e.message);
+    });
+
+    // ===== construtores de URL =====
+    function buildSceneViewerIntent(){
+      var fallbackUrl = encodeURIComponent(window.location.href);
       return 'intent://arvr.google.com/scene-viewer/1.0?file='
         + encodeURIComponent(modelUrl)
         + '&mode=ar_preferred&resizable=true#Intent;scheme=https;package=com.google.ar.core;action=android.intent.action.VIEW;S.browser_fallback_url='
-        + fallbackUrl
-        + ';end;';
+        + fallbackUrl + ';end;';
     }
-
-    // Caminho 2: URL https:// direta do Scene Viewer.
-    // As vezes funciona quando o intent:// falha (e vice-versa).
-    function buildSceneViewerHttps() {
+    function buildSceneViewerHttps(){
       return 'https://arvr.google.com/scene-viewer/1.0?file='
-        + encodeURIComponent(modelUrl)
-        + '&mode=ar_preferred';
+        + encodeURIComponent(modelUrl) + '&mode=ar_preferred';
     }
 
     button.setAttribute('href', buildSceneViewerIntent());
     buttonAlt.setAttribute('href', buildSceneViewerHttps());
+    log('botoes prontos. toque num deles para testar.');
+
+    // ===== rastreamento da ida/volta ao Scene Viewer =====
+    // Quando o Scene Viewer abre, a pagina fica "hidden". Ao voltar, fica
+    // "visible". O tempo fora distingue os casos de falha.
+    var leftAt = 0;
+    button.addEventListener('click', function(){
+      log('--- TOQUE no botao 1 (intent://) ---');
+      log('disparando: ' + button.getAttribute('href').slice(0, 90) + '...');
+    });
+    buttonAlt.addEventListener('click', function(){
+      log('--- TOQUE no botao 2 (https://) ---');
+      log('disparando: ' + buttonAlt.getAttribute('href').slice(0, 90) + '...');
+    });
+
+    document.addEventListener('visibilitychange', function(){
+      if (document.visibilityState === 'hidden'){
+        leftAt = Date.now();
+        log('pagina saiu de foco (Scene Viewer abrindo?)');
+      } else {
+        var away = leftAt ? ((Date.now() - leftAt)/1000).toFixed(2) : '?';
+        log('pagina VOLTOU ao foco. tempo fora: ' + away + 's');
+        if (leftAt && (Date.now() - leftAt) < 1500){
+          log('-> voltou MUITO rapido: Scene Viewer recusou o modelo na hora');
+          log('   (causa provavel: GLB grande demais ou content-type errado)');
+        } else if (leftAt){
+          log('-> ficou fora um tempo: Scene Viewer tentou e desistiu');
+          log('   (causa provavel: ARCore/Play Services for AR no aparelho)');
+        }
+        leftAt = 0;
+      }
+    });
+
+    // se o intent:// nem for reconhecido, o navegador as vezes dispara erro
+    window.addEventListener('error', function(e){
+      log('JS error: ' + e.message);
+    });
   </script>
 </body>
 </html>
